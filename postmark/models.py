@@ -1,9 +1,11 @@
 from django.utils.translation import ugettext_lazy as _
 from django.dispatch import receiver
 from django.db import models
+from django.conf import settings
 from itertools import izip_longest
 from datetime import datetime
 from pytz import timezone
+import re
 import pytz
 
 from postmark.signals import post_send
@@ -102,10 +104,12 @@ def sent_message(sender, **kwargs):
         if not recipient[0]:
             continue
         
-        timestamp, tz = resp["SubmittedAt"].rsplit("+", 1)
-        tz_offset = int(tz.split(":", 1)[0])
-        tz = timezone("Etc/GMT%s%d" % ("+" if tz_offset >= 0 else "-", tz_offset))
+        timestamp, tz_offset, junk = re.match(r"(.*)[-+](\d{2})\D(\d{2})$", resp["SubmittedAt"]).groups()
+        tz_offset = int(tz_offset)
+        tz = timezone("Etc/GMT%s%d" % (resp["SubmittedAt"][-6:-5], tz_offset))
         submitted_at = tz.localize(datetime.strptime(timestamp[:26], POSTMARK_DATETIME_STRING)).astimezone(pytz.utc)
+        if not settings.USE_TZ:
+            submitted_at = submitted_at.replace(tzinfo=None)
         
         
         emsg = EmailMessage(
